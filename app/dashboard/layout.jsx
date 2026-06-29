@@ -1,20 +1,41 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Sidebar from "@/src/components/Sidebar";
 import { CurrencyProvider } from "@/src/hooks/useCurrency";
 import { useUserProfile } from "@/src/hooks/useUserProfile";
+import { usePermissions } from "@/src/hooks/usePermissions";
+
+const ROUTE_PERMISSIONS = {
+  "/dashboard/pos": "pos.vender",
+  "/dashboard/inventario": "inventario.gestionar",
+  "/dashboard/caja": "caja.gestionar",
+  "/dashboard/creditos": "creditos.gestionar",
+  "/dashboard/recibos": "recibos.gestionar",
+  "/dashboard/reportes": "reportes.ver",
+  "/dashboard/administracion": "admin.access",
+};
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { profile, tenant, branch, loading, error } = useUserProfile();
+  const { can } = usePermissions();
 
   useEffect(() => {
     if (!loading && !profile) {
       router.replace("/login");
     }
   }, [loading, profile, router]);
+
+  useEffect(() => {
+    if (!profile || loading) return;
+    const required = ROUTE_PERMISSIONS[pathname];
+    if (required && !can(required)) {
+      router.replace("/dashboard");
+    }
+  }, [pathname, profile, loading, can, router]);
 
   if (loading) {
     return (
@@ -29,7 +50,9 @@ export default function DashboardLayout({ children }) {
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="max-w-md rounded-xl bg-red-50 p-6 text-center text-red-700">
           <p className="font-semibold">Error de autenticación</p>
-          <p className="mt-2 text-sm">{error || "Perfil no encontrado. Ejecuta link_superadmin en Supabase."}</p>
+          <p className="mt-2 text-sm">
+            {error || "Perfil no encontrado. Ejecuta link_superadmin en Supabase."}
+          </p>
         </div>
       </div>
     );

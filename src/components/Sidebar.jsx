@@ -8,13 +8,33 @@ import { usePermissions } from "@/src/hooks/usePermissions";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/dashboard/pos", label: "POS", icon: "🛒" },
-  { href: "/dashboard/inventario", label: "Inventario", icon: "📦" },
-  { href: "/dashboard/caja", label: "Caja", icon: "💰" },
-  { href: "/dashboard/creditos", label: "Créditos", icon: "📋" },
-  { href: "/dashboard/recibos", label: "Recibos", icon: "🧾" },
-  { href: "/dashboard/reportes", label: "Reportes", icon: "📈" },
-  { href: "/dashboard/administracion", label: "Administración", icon: "⚙️", admin: true },
+  { href: "/dashboard/pos", label: "POS", icon: "🛒", perm: "pos.vender" },
+  {
+    href: "/dashboard/inventario",
+    label: "Inventario",
+    icon: "📦",
+    perm: "inventario.gestionar",
+  },
+  { href: "/dashboard/caja", label: "Caja", icon: "💰", perm: "caja.gestionar" },
+  {
+    href: "/dashboard/creditos",
+    label: "Créditos",
+    icon: "📋",
+    perm: "creditos.gestionar",
+  },
+  {
+    href: "/dashboard/recibos",
+    label: "Recibos",
+    icon: "🧾",
+    perm: "recibos.gestionar",
+  },
+  { href: "/dashboard/reportes", label: "Reportes", icon: "📈", perm: "reportes.ver" },
+  {
+    href: "/dashboard/administracion",
+    label: "Administración",
+    icon: "⚙️",
+    perm: "admin.access",
+  },
 ];
 
 export default function Sidebar({ tenant, branch, profile }) {
@@ -22,14 +42,14 @@ export default function Sidebar({ tenant, branch, profile }) {
   const router = useRouter();
   const demo = isDemoMode();
   const { currency, setCurrency, currencies } = useCurrency();
-  const { isAdmin } = usePermissions();
+  const { can } = usePermissions();
 
   async function handleLogout() {
     await auth.signOut();
     router.push("/login");
   }
 
-  const items = navItems.filter((item) => !item.admin || isAdmin);
+  const items = navItems.filter((item) => !item.perm || can(item.perm));
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-indigo-950 text-white shadow-xl">

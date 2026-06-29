@@ -6,7 +6,7 @@ import { useUserProfile } from "@/src/hooks/useUserProfile";
 import { useCurrency } from "@/src/hooks/useCurrency";
 
 export default function DashboardPage() {
-  const { branch } = useUserProfile();
+  const { branch, tenant } = useUserProfile();
   const { formatMoney } = useCurrency();
   const [stats, setStats] = useState({
     products: 0,
@@ -41,8 +41,11 @@ export default function DashboardPage() {
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
         <p className="text-slate-500">
-          Resumen de {branch?.name || "tu sucursal"}
+          Resumen de {branch?.name || "tu sucursal"} — {tenant?.name}
         </p>
+        {tenant?.description && (
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">{tenant.description}</p>
+        )}
       </header>
 
       {stats.openRegister ? (

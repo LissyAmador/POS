@@ -28,6 +28,14 @@ function resolveRole(store, profile) {
       permissions: ALL_PERMISSION_KEYS.filter((k) => k !== "admin.organizaciones"),
     };
   }
+  if (profile.role === "contabilidad") {
+    return {
+      id: "legacy-contabilidad",
+      slug: "contabilidad",
+      name: "Contabilidad",
+      permissions: ["caja.gestionar", "reportes.ver", "recibos.gestionar"],
+    };
+  }
   return {
     id: "legacy-vendedor",
     slug: "vendedor",

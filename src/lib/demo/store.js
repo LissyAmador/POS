@@ -1,4 +1,5 @@
 import { createInitialDemoData } from "./seed";
+import { mergeChinoCellIfMissing } from "./chino-cell-seed";
 
 const STORAGE_KEY = "pos-demo-data";
 
@@ -49,6 +50,8 @@ function migrateStore(data) {
     presentation_id: product.presentation_id || initial.presentations[0]?.id || null,
     image_url: product.image_url || null,
   }));
+
+  migrated = mergeChinoCellIfMissing(migrated, initial);
 
   return migrated;
 }

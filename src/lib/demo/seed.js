@@ -1,3 +1,5 @@
+import { createChinoCellBundle, mergeBundles } from "./chino-cell-seed";
+
 export const DEMO_USER = {
   id: "d0000000-0000-4000-8000-000000000001",
   email: "superadmin@pos.demo",
@@ -197,7 +199,7 @@ export function createInitialDemoData() {
     created_at: now.toISOString(),
   };
 
-  return {
+  const base = {
     tenants: [
       {
         id: DEMO_TENANT_ID,
@@ -271,4 +273,7 @@ export function createInitialDemoData() {
       },
     ],
   };
+
+  const chino = createChinoCellBundle(now);
+  return mergeBundles(base, chino);
 }

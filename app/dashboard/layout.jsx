@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar from "@/src/components/Sidebar";
-import BranchBanner from "@/src/components/BranchBanner";
+import BranchSelector from "@/src/components/BranchSelector";
 import { CurrencyProvider } from "@/src/hooks/useCurrency";
 import { BranchProvider } from "@/src/hooks/useBranchContext";
 import { useUserProfile } from "@/src/hooks/useUserProfile";
@@ -17,6 +17,7 @@ const ROUTE_PERMISSIONS = {
   "/dashboard/recibos": "recibos.gestionar",
   "/dashboard/reportes": "reportes.ver",
   "/dashboard/administracion": "admin.access",
+  "/dashboard/servicio-tecnico": "servicio_tecnico.gestionar",
 };
 
 export default function DashboardLayout({ children }) {
@@ -66,7 +67,7 @@ export default function DashboardLayout({ children }) {
         <div className="min-h-screen bg-slate-50">
           <Sidebar tenant={tenant} profile={profile} />
           <main className="ml-64 min-h-screen p-8">
-            <BranchBanner />
+            <BranchSelector />
             {children}
           </main>
         </div>

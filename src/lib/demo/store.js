@@ -1,7 +1,36 @@
 import { createInitialDemoData } from "./seed";
-import { mergeChinoCellIfMissing } from "./chino-cell-seed";
+import {
+  mergeChinoCellIfMissing,
+  ROLE_CHINO_ADMIN,
+  ROLE_CHINO_VENDEDOR,
+} from "./chino-cell-seed";
 
 const STORAGE_KEY = "pos-demo-data";
+
+function migrateRepairModule(migrated, initial) {
+  const existingTechIds = new Set((migrated.technicians || []).map((t) => t.id));
+  for (const tech of initial.technicians || []) {
+    if (!existingTechIds.has(tech.id)) {
+      migrated.technicians = [...(migrated.technicians || []), tech];
+    }
+  }
+  if (!migrated.repair_orders) {
+    migrated.repair_orders = [];
+  }
+
+  const servicioPerm = "servicio_tecnico.gestionar";
+  migrated.roles = (migrated.roles || []).map((role) => {
+    if (role.permissions?.includes("*")) return role;
+    const needsPerm =
+      role.id === ROLE_CHINO_ADMIN || role.id === ROLE_CHINO_VENDEDOR;
+    if (needsPerm && !role.permissions.includes(servicioPerm)) {
+      return { ...role, permissions: [...role.permissions, servicioPerm] };
+    }
+    return role;
+  });
+
+  return migrated;
+}
 
 function migrateStore(data) {
   const initial = createInitialDemoData();
@@ -52,6 +81,7 @@ function migrateStore(data) {
   }));
 
   migrated = mergeChinoCellIfMissing(migrated, initial);
+  migrated = migrateRepairModule(migrated, initial);
 
   return migrated;
 }

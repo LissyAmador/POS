@@ -272,6 +272,8 @@ export function createInitialDemoData() {
         created_at: yesterday.toISOString(),
       },
     ],
+    technicians: [],
+    repair_orders: [],
   };
 
   const chino = createChinoCellBundle(now);

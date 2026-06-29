@@ -31,6 +31,12 @@ const navItems = [
   },
   { href: "/dashboard/reportes", label: "Reportes", icon: "📈", perm: "reportes.ver" },
   {
+    href: "/dashboard/servicio-tecnico",
+    label: "Servicio Técnico",
+    icon: "🔧",
+    perm: "servicio_tecnico.gestionar",
+  },
+  {
     href: "/dashboard/administracion",
     label: "Administración",
     icon: "⚙️",
@@ -44,7 +50,7 @@ export default function Sidebar({ tenant, profile }) {
   const demo = isDemoMode();
   const { currency, setCurrency, currencies } = useCurrency();
   const { can } = usePermissions();
-  const { activeBranch, branches, setActiveBranch, canSwitchBranch } = useBranch();
+  const { activeBranch } = useBranch();
 
   async function handleLogout() {
     await auth.signOut();
@@ -60,29 +66,7 @@ export default function Sidebar({ tenant, profile }) {
         <p className="mt-1 truncate text-xs text-indigo-300">
           {tenant?.name || "Cargando..."}
         </p>
-        {canSwitchBranch && branches.length > 1 ? (
-          <div className="mt-2">
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-indigo-400">
-              Sucursal activa
-            </label>
-            <select
-              value={activeBranch?.id || ""}
-              onChange={(e) => {
-                const next = branches.find((b) => b.id === e.target.value);
-                if (next) setActiveBranch(next);
-              }}
-              className="w-full rounded-lg border border-indigo-700 bg-indigo-900 px-2 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
-            >
-              {branches.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <p className="truncate text-xs text-indigo-400">{activeBranch?.name || ""}</p>
-        )}
+        <p className="truncate text-xs text-indigo-400">{activeBranch?.name || ""}</p>
         {demo && (
           <span className="mt-2 inline-block rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
             DEMO

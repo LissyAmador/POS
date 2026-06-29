@@ -52,6 +52,7 @@ const ADMIN_ORG_PERMS = [
   "creditos.gestionar",
   "recibos.gestionar",
   "reportes.ver",
+  "servicio_tecnico.gestionar",
 ];
 
 export function createChinoCellBundle(now = new Date()) {
@@ -347,7 +348,7 @@ export function createChinoCellBundle(now = new Date()) {
       tenant_id: CHINO_TENANT_ID,
       name: "Ventas",
       slug: "vendedor",
-      permissions: ["pos.vender", "inventario.gestionar"],
+      permissions: ["pos.vender", "inventario.gestionar", "servicio_tecnico.gestionar"],
       is_system: true,
     },
     {
@@ -422,6 +423,41 @@ export function createChinoCellBundle(now = new Date()) {
     role: roles.find((r) => r.id === user.role_id)?.slug || "vendedor",
   }));
 
+  const technicians = [
+    {
+      id: "cc-tech-001",
+      tenant_id: CHINO_TENANT_ID,
+      branch_id: CHINO_BRANCH_1_ID,
+      name: "Roberto Méndez",
+      specialty: "Android / iOS",
+      active: true,
+    },
+    {
+      id: "cc-tech-002",
+      tenant_id: CHINO_TENANT_ID,
+      branch_id: CHINO_BRANCH_1_ID,
+      name: "Sandra Morales",
+      specialty: "Pantallas y baterías",
+      active: true,
+    },
+    {
+      id: "cc-tech-003",
+      tenant_id: CHINO_TENANT_ID,
+      branch_id: CHINO_BRANCH_2_ID,
+      name: "Miguel Ángel Paz",
+      specialty: "Software / flasheo",
+      active: true,
+    },
+    {
+      id: "cc-tech-004",
+      tenant_id: CHINO_TENANT_ID,
+      branch_id: CHINO_BRANCH_2_ID,
+      name: "Diana Herrera",
+      specialty: "iPhone / iPad",
+      active: true,
+    },
+  ];
+
   return {
     tenants: [
       {
@@ -458,6 +494,8 @@ export function createChinoCellBundle(now = new Date()) {
     sales_details: [],
     credit_payments: [],
     cash_registers: [],
+    technicians,
+    repair_orders: [],
   };
 }
 
@@ -481,6 +519,8 @@ export function mergeChinoCellIfMissing(store, initialFull) {
     presentations: [...(store.presentations || []), ...chino.presentations],
     products: [...(store.products || []), ...chino.products],
     inventory: [...(store.inventory || []), ...chino.inventory],
+    technicians: [...(store.technicians || []), ...(chino.technicians || [])],
+    repair_orders: [...(store.repair_orders || []), ...(chino.repair_orders || [])],
   };
 }
 
@@ -500,5 +540,7 @@ export function mergeBundles(base, chino) {
     sales_details: [...(base.sales_details || []), ...(chino.sales_details || [])],
     credit_payments: [...(base.credit_payments || []), ...(chino.credit_payments || [])],
     cash_registers: [...(base.cash_registers || []), ...(chino.cash_registers || [])],
+    technicians: [...(base.technicians || []), ...(chino.technicians || [])],
+    repair_orders: [...(base.repair_orders || []), ...(chino.repair_orders || [])],
   };
 }

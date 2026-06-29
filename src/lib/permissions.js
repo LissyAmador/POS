@@ -10,6 +10,11 @@ export const PERMISSION_CATALOG = [
   { key: "creditos.gestionar", name: "Gestionar créditos", module: "Créditos" },
   { key: "recibos.gestionar", name: "Ver y anular recibos", module: "Recibos" },
   { key: "reportes.ver", name: "Ver reportes de ventas", module: "Reportes" },
+  {
+    key: "servicio_tecnico.gestionar",
+    name: "Gestionar servicio técnico",
+    module: "Servicio Técnico",
+  },
 ];
 
 export const ALL_PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);

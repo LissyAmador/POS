@@ -12,6 +12,7 @@ const navItems = [
   { href: "/dashboard/caja", label: "Caja", icon: "💰" },
   { href: "/dashboard/creditos", label: "Créditos", icon: "📋" },
   { href: "/dashboard/recibos", label: "Recibos", icon: "🧾" },
+  { href: "/dashboard/reportes", label: "Reportes", icon: "📈" },
 ];
 
 export default function Sidebar({ tenant, branch, profile }) {

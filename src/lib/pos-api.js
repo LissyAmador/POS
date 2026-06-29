@@ -778,4 +778,112 @@ export async function voidSale(saleId) {
   };
 }
 
+export async function getSalesReport(
+  branchId,
+  { startDate, endDate, paymentMethod = "all" } = {}
+) {
+  if (isDemoMode()) {
+    const store = getDemoStore();
+    let sales = store.sales.filter(
+      (s) => s.branch_id === branchId && s.status !== "anulada"
+    );
+
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      sales = sales.filter((s) => new Date(s.created_at) >= start);
+    }
+
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      sales = sales.filter((s) => new Date(s.created_at) <= end);
+    }
+
+    if (paymentMethod && paymentMethod !== "all") {
+      if (paymentMethod === "credito") {
+        sales = sales.filter((s) => s.type === "credito");
+      } else {
+        sales = sales.filter(
+          (s) => s.type === "contado" && (s.payment_method || "efectivo") === paymentMethod
+        );
+      }
+    }
+
+    const byPayment = {};
+    sales.forEach((sale) => {
+      const key =
+        sale.type === "credito" ? "credito" : sale.payment_method || "efectivo";
+      if (!byPayment[key]) {
+        byPayment[key] = { count: 0, total: 0 };
+      }
+      byPayment[key].count += 1;
+      byPayment[key].total += Number(sale.total);
+    });
+
+    const sorted = [...sales].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    return {
+      data: {
+        sales: sorted,
+        summary: {
+          count: sales.length,
+          total: sales.reduce((sum, s) => sum + Number(s.total), 0),
+          byPayment,
+        },
+      },
+      error: null,
+    };
+  }
+
+  let query = supabase
+    .from("sales")
+    .select("*")
+    .eq("branch_id", branchId)
+    .neq("status", "anulada")
+    .order("created_at", { ascending: false });
+
+  if (startDate) {
+    query = query.gte("created_at", `${startDate}T00:00:00`);
+  }
+  if (endDate) {
+    query = query.lte("created_at", `${endDate}T23:59:59`);
+  }
+  if (paymentMethod && paymentMethod !== "all") {
+    if (paymentMethod === "credito") {
+      query = query.eq("type", "credito");
+    } else {
+      query = query.eq("type", "contado").eq("payment_method", paymentMethod);
+    }
+  }
+
+  const { data: sales, error } = await query;
+  if (error) return { data: null, error };
+
+  const byPayment = {};
+  (sales || []).forEach((sale) => {
+    const key =
+      sale.type === "credito" ? "credito" : sale.payment_method || "efectivo";
+    if (!byPayment[key]) {
+      byPayment[key] = { count: 0, total: 0 };
+    }
+    byPayment[key].count += 1;
+    byPayment[key].total += Number(sale.total);
+  });
+
+  return {
+    data: {
+      sales: sales || [],
+      summary: {
+        count: (sales || []).length,
+        total: (sales || []).reduce((sum, s) => sum + Number(s.total), 0),
+        byPayment,
+      },
+    },
+    error: null,
+  };
+}
+
 export { isDemoMode, DEMO_TENANT_ID, DEMO_BRANCH_ID };

@@ -1,4 +1,4 @@
-import { DEMO_USER } from "./seed";
+import { getDemoStore } from "./store";
 
 const SESSION_KEY = "pos-demo-session";
 const listeners = new Set();
@@ -29,12 +29,22 @@ export function demoGetUser() {
 }
 
 export function demoSignIn({ email, password }) {
-  if (email !== DEMO_USER.email || password !== DEMO_USER.password) {
-    return { error: { message: "Credenciales inválidas. Use superadmin@pos.demo / SuperAdmin123!" } };
+  const store = getDemoStore();
+  const user = (store.demo_users || []).find(
+    (u) => u.email === email.trim().toLowerCase() && u.active !== false
+  );
+
+  if (!user || user.password !== password) {
+    return {
+      error: {
+        message:
+          "Credenciales inválidas. Pruebe superadmin@pos.demo / SuperAdmin123!",
+      },
+    };
   }
 
   const session = {
-    user: { id: DEMO_USER.id, email: DEMO_USER.email },
+    user: { id: user.id, email: user.email },
     access_token: "demo-token",
   };
   writeSession(session);

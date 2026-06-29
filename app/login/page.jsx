@@ -93,6 +93,7 @@ export default function LoginPage() {
         <div className="mt-6 rounded-lg bg-slate-50 px-4 py-3 text-center text-xs text-slate-500">
           <p className="font-medium text-slate-700">Credenciales de prueba</p>
           <p className="mt-1">superadmin@pos.demo / SuperAdmin123!</p>
+          <p className="mt-1">vendedor@pos.demo / Vendedor123!</p>
         </div>
       </div>
     </div>

@@ -4,8 +4,79 @@ export const DEMO_USER = {
   password: "SuperAdmin123!",
 };
 
+export const DEMO_USER_VENDEDOR = {
+  id: "d0000000-0000-4000-8000-000000000002",
+  email: "vendedor@pos.demo",
+  password: "Vendedor123!",
+};
+
 export const DEMO_TENANT_ID = "a0000000-0000-4000-8000-000000000001";
 export const DEMO_BRANCH_ID = "b0000000-0000-4000-8000-000000000001";
+
+export const ROLE_SUPER_ADMIN = "r0000000-0000-4000-8000-000000000001";
+export const ROLE_ADMIN_ORG = "r0000000-0000-4000-8000-000000000002";
+export const ROLE_VENDEDOR = "r0000000-0000-4000-8000-000000000003";
+
+export const DEMO_ROLES = [
+  {
+    id: ROLE_SUPER_ADMIN,
+    tenant_id: null,
+    name: "Super Administrador",
+    slug: "super_admin",
+    permissions: ["*"],
+    is_system: true,
+  },
+  {
+    id: ROLE_ADMIN_ORG,
+    tenant_id: DEMO_TENANT_ID,
+    name: "Admin Organización",
+    slug: "admin_org",
+    permissions: [
+      "admin.access",
+      "admin.roles",
+      "admin.permisos",
+      "admin.usuarios",
+      "pos.vender",
+      "inventario.gestionar",
+      "caja.gestionar",
+      "creditos.gestionar",
+      "recibos.gestionar",
+      "reportes.ver",
+    ],
+    is_system: true,
+  },
+  {
+    id: ROLE_VENDEDOR,
+    tenant_id: DEMO_TENANT_ID,
+    name: "Vendedor",
+    slug: "vendedor",
+    permissions: ["pos.vender", "reportes.ver"],
+    is_system: true,
+  },
+];
+
+export const DEMO_USERS = [
+  {
+    id: DEMO_USER.id,
+    name: "Super Admin Demo",
+    email: DEMO_USER.email,
+    password: DEMO_USER.password,
+    tenant_id: DEMO_TENANT_ID,
+    branch_id: DEMO_BRANCH_ID,
+    role_id: ROLE_SUPER_ADMIN,
+    active: true,
+  },
+  {
+    id: DEMO_USER_VENDEDOR.id,
+    name: "Vendedor Demo",
+    email: DEMO_USER_VENDEDOR.email,
+    password: DEMO_USER_VENDEDOR.password,
+    tenant_id: DEMO_TENANT_ID,
+    branch_id: DEMO_BRANCH_ID,
+    role_id: ROLE_VENDEDOR,
+    active: true,
+  },
+];
 
 export const DEMO_CATEGORIES = [
   { id: "cat-001", tenant_id: DEMO_TENANT_ID, name: "Bebidas" },
@@ -142,13 +213,24 @@ export function createInitialDemoData() {
         address: "Av. Principal #100, Ciudad Demo",
       },
     ],
+    roles: DEMO_ROLES,
+    demo_users: DEMO_USERS,
     users_profiles: [
       {
         id: "p0000000-0000-4000-8000-000000000001",
         user_id: DEMO_USER.id,
         tenant_id: DEMO_TENANT_ID,
         branch_id: DEMO_BRANCH_ID,
-        role: "admin_org",
+        role_id: ROLE_SUPER_ADMIN,
+        role: "super_admin",
+      },
+      {
+        id: "p0000000-0000-4000-8000-000000000002",
+        user_id: DEMO_USER_VENDEDOR.id,
+        tenant_id: DEMO_TENANT_ID,
+        branch_id: DEMO_BRANCH_ID,
+        role_id: ROLE_VENDEDOR,
+        role: "vendedor",
       },
     ],
     categories: DEMO_CATEGORIES,

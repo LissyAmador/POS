@@ -8,6 +8,7 @@ import {
 } from "./demo/auth";
 import { getDemoStore, updateDemoStore, uuid } from "./demo/store";
 import { DEMO_BRANCH_ID, DEMO_TENANT_ID } from "./demo/seed";
+import { resolveRole } from "./admin-api";
 import { supabase } from "@/src/utils/supabase/client";
 
 export const auth = {
@@ -41,9 +42,20 @@ export async function getUserProfile(userId) {
 
     const tenant = store.tenants.find((t) => t.id === profile.tenant_id);
     const branch = store.branches.find((b) => b.id === profile.branch_id);
+    const demoUser = (store.demo_users || []).find((u) => u.id === userId);
+    const roleData = resolveRole(store, profile);
 
     return {
-      data: { ...profile, tenants: tenant, branches: branch },
+      data: {
+        ...profile,
+        name: demoUser?.name || profile.name,
+        email: demoUser?.email,
+        role: roleData.slug,
+        role_name: roleData.name,
+        permissions: roleData.permissions,
+        tenants: tenant,
+        branches: branch,
+      },
       error: null,
     };
   }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { auth, isDemoMode } from "@/src/lib/pos-api";
 import { useCurrency } from "@/src/hooks/useCurrency";
+import { usePermissions } from "@/src/hooks/usePermissions";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -13,6 +14,7 @@ const navItems = [
   { href: "/dashboard/creditos", label: "Créditos", icon: "📋" },
   { href: "/dashboard/recibos", label: "Recibos", icon: "🧾" },
   { href: "/dashboard/reportes", label: "Reportes", icon: "📈" },
+  { href: "/dashboard/administracion", label: "Administración", icon: "⚙️", admin: true },
 ];
 
 export default function Sidebar({ tenant, branch, profile }) {
@@ -20,11 +22,14 @@ export default function Sidebar({ tenant, branch, profile }) {
   const router = useRouter();
   const demo = isDemoMode();
   const { currency, setCurrency, currencies } = useCurrency();
+  const { isAdmin } = usePermissions();
 
   async function handleLogout() {
     await auth.signOut();
     router.push("/login");
   }
+
+  const items = navItems.filter((item) => !item.admin || isAdmin);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-indigo-950 text-white shadow-xl">
@@ -44,7 +49,7 @@ export default function Sidebar({ tenant, branch, profile }) {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -81,7 +86,10 @@ export default function Sidebar({ tenant, branch, profile }) {
           </select>
         </div>
         <div className="mb-3 truncate text-xs text-indigo-300">
-          Rol: <span className="font-semibold text-white">{profile?.role}</span>
+          Rol:{" "}
+          <span className="font-semibold text-white">
+            {profile?.role_name || profile?.role}
+          </span>
         </div>
         <button
           onClick={handleLogout}

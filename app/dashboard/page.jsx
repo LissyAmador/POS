@@ -1,0 +1,117 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/src/utils/supabase/client";
+import { useUserProfile, formatCurrency } from "@/src/hooks/useUserProfile";
+
+export default function DashboardPage() {
+  const { branch } = useUserProfile();
+  const [stats, setStats] = useState({
+    products: 0,
+    salesToday: 0,
+    revenueToday: 0,
+    pendingCredits: 0,
+    openRegister: false,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!branch?.id) return;
+
+    async function loadStats() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const [productsRes, salesRes, creditsRes, registerRes] = await Promise.all([
+        supabase
+          .from("inventory")
+          .select("id", { count: "exact", head: true })
+          .eq("branch_id", branch.id),
+        supabase
+          .from("sales")
+          .select("total")
+          .eq("branch_id", branch.id)
+          .gte("created_at", today.toISOString()),
+        supabase
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .eq("branch_id", branch.id)
+          .eq("type", "credito")
+          .eq("status_credit", "pendiente"),
+        supabase
+          .from("cash_registers")
+          .select("id")
+          .eq("branch_id", branch.id)
+          .eq("status", "abierta")
+          .maybeSingle(),
+      ]);
+
+      const revenue = (salesRes.data || []).reduce(
+        (sum, s) => sum + Number(s.total),
+        0
+      );
+
+      setStats({
+        products: productsRes.count || 0,
+        salesToday: salesRes.data?.length || 0,
+        revenueToday: revenue,
+        pendingCredits: creditsRes.count || 0,
+        openRegister: !!registerRes.data,
+      });
+      setLoading(false);
+    }
+
+    loadStats();
+  }, [branch?.id]);
+
+  const cards = [
+    { label: "Productos en inventario", value: stats.products, color: "bg-blue-500" },
+    { label: "Ventas hoy", value: stats.salesToday, color: "bg-emerald-500" },
+    { label: "Ingresos hoy", value: formatCurrency(stats.revenueToday), color: "bg-violet-500" },
+    { label: "Créditos pendientes", value: stats.pendingCredits, color: "bg-amber-500" },
+  ];
+
+  return (
+    <div>
+      <header className="mb-8">
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+        <p className="text-slate-500">
+          Resumen de {branch?.name || "tu sucursal"}
+        </p>
+      </header>
+
+      {stats.openRegister ? (
+        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Caja abierta — puedes procesar ventas al contado y registrar abonos.
+        </div>
+      ) : (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Caja cerrada — abre un turno en el módulo Caja antes de vender al contado.
+        </div>
+      )}
+
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-xl bg-slate-200" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {cards.map((card) => (
+            <div
+              key={card.label}
+              className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200"
+            >
+              <div className={`h-1 ${card.color}`} />
+              <div className="p-5">
+                <p className="text-sm text-slate-500">{card.label}</p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">{card.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

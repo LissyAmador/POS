@@ -1,0 +1,90 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/src/utils/supabase/client";
+
+export function useUserProfile() {
+  const [profile, setProfile] = useState(null);
+  const [tenant, setTenant] = useState(null);
+  const [branch, setBranch] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadProfile() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          if (mounted) {
+            setProfile(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from("users_profiles")
+          .select("*, tenants(*), branches(*)")
+          .eq("user_id", user.id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        if (mounted) {
+          setProfile(profileData);
+          setTenant(profileData.tenants);
+          setBranch(profileData.branches);
+        }
+      } catch (err) {
+        if (mounted) setError(err.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadProfile();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      loadProfile();
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  return { profile, tenant, branch, loading, error };
+}
+
+export function formatCurrency(amount) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  }).format(Number(amount) || 0);
+}
+
+export function formatDate(date) {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("es-MX", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function daysUntilDue(dueDate) {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  return Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+}

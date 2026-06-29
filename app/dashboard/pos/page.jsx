@@ -137,6 +137,7 @@ export default function POSPage() {
     setReceipt({
       sale: saleData,
       items: detailsData || [],
+      paymentMethod,
     });
 
     setCart([]);
@@ -330,6 +331,7 @@ export default function POSPage() {
           items={receipt.items}
           tenant={tenant}
           branch={branch}
+          paymentMethod={receipt.paymentMethod}
           onClose={closeReceipt}
         />
       )}

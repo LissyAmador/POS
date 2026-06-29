@@ -386,6 +386,7 @@ export async function processSale({
       user_id: userId,
       client_name: clientName || null,
       type: saleType,
+      payment_method: paymentMethod || null,
       total,
       status_credit: saleType === "credito" ? "pendiente" : "pagado",
       due_date: saleType === "credito" ? dueDate : null,
@@ -468,6 +469,65 @@ export async function getSaleWithDetails(saleId) {
     .eq("sale_id", saleId);
 
   return { sale, details: details || [] };
+}
+
+export async function getSaleById(saleId) {
+  if (isDemoMode()) {
+    const store = getDemoStore();
+    const sale = store.sales.find((s) => s.id === saleId);
+
+    if (!sale) {
+      return { error: { message: "Recibo no encontrado." } };
+    }
+
+    const branch = store.branches.find((b) => b.id === sale.branch_id);
+    const tenant = store.tenants.find((t) => t.id === branch?.tenant_id);
+    const items = store.sales_details
+      .filter((d) => d.sale_id === saleId)
+      .map((d) => ({
+        ...d,
+        products: store.products.find((p) => p.id === d.product_id),
+      }));
+
+    return {
+      sale,
+      items,
+      tenant,
+      branch,
+      paymentMethod: sale.payment_method,
+      error: null,
+    };
+  }
+
+  const { data: sale, error } = await supabase
+    .from("sales")
+    .select("*")
+    .eq("id", saleId)
+    .single();
+
+  if (error || !sale) {
+    return { error: { message: "Recibo no encontrado." } };
+  }
+
+  const { data: branch } = await supabase
+    .from("branches")
+    .select("*, tenants(*)")
+    .eq("id", sale.branch_id)
+    .single();
+
+  const { data: details } = await supabase
+    .from("sales_details")
+    .select("*, products(name)")
+    .eq("sale_id", saleId);
+
+  return {
+    sale,
+    items: details || [],
+    tenant: branch?.tenants,
+    branch,
+    paymentMethod: sale.payment_method,
+    error: null,
+  };
 }
 
 export async function getPendingCredits(branchId) {

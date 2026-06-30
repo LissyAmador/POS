@@ -7,6 +7,11 @@ import {
   getTechnicians,
   createRepairOrder,
   updateRepairOrderStatus,
+  findRepairOrder,
+  deliverRepairOrder,
+  getRepairReceipt,
+  getPartsForBrandModel,
+  getModelsForBrand,
 } from "@/src/lib/repair-api";
 import {
   DEVICE_CONDITIONS,
@@ -18,8 +23,10 @@ import { useUserProfile } from "@/src/hooks/useUserProfile";
 import { useBranch } from "@/src/hooks/useBranchContext";
 import { useCurrency } from "@/src/hooks/useCurrency";
 import RepairTicket from "@/src/components/RepairTicket";
+import ReceiptModal from "@/src/components/ReceiptModal";
 
 const emptyForm = {
+  ticket_number: "",
   client_name: "",
   client_phone: "",
   device_brand: "",
@@ -40,6 +47,8 @@ export default function ServicioTecnicoPage() {
   const [orders, setOrders] = useState([]);
   const [services, setServices] = useState([]);
   const [partsCatalog, setPartsCatalog] = useState([]);
+  const [brandCatalog, setBrandCatalog] = useState({});
+  const [brands, setBrands] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,6 +58,23 @@ export default function ServicioTecnicoPage() {
   const [partToAdd, setPartToAdd] = useState({ product_id: "", quantity: 1 });
   const [message, setMessage] = useState({ type: "", text: "" });
   const [ticketOrder, setTicketOrder] = useState(null);
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [viewOrder, setViewOrder] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [deliverModal, setDeliverModal] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("efectivo");
+  const [receiptData, setReceiptData] = useState(null);
+  const [delivering, setDelivering] = useState(false);
+
+  const models = useMemo(
+    () => getModelsForBrand(brandCatalog, form.device_brand),
+    [brandCatalog, form.device_brand]
+  );
+
+  const compatibleParts = useMemo(
+    () => getPartsForBrandModel(partsCatalog, form.device_brand, form.device_model),
+    [partsCatalog, form.device_brand, form.device_model]
+  );
 
   const selectedService = services.find((s) => s.id === form.repair_service_id);
   const laborCost = selectedService?.price || 0;
@@ -71,6 +97,8 @@ export default function ServicioTecnicoPage() {
     setOrders(ordersRes.data || []);
     setServices(catalogRes.data?.services || []);
     setPartsCatalog(catalogRes.data?.parts || []);
+    setBrandCatalog(catalogRes.data?.brandCatalog || {});
+    setBrands(catalogRes.data?.brands || []);
     setTechnicians(techRes.data || []);
     setLoading(false);
   }
@@ -79,14 +107,30 @@ export default function ServicioTecnicoPage() {
     loadAll();
   }, [profile?.tenant_id, branch?.id]);
 
+  useEffect(() => {
+    setSelectedParts([]);
+    setPartToAdd({ product_id: "", quantity: 1 });
+  }, [form.device_brand, form.device_model]);
+
   function flash(type, text) {
     setMessage({ type, text });
     setTimeout(() => setMessage({ type: "", text: "" }), 4000);
   }
 
+  async function handleSearchTicket(e) {
+    e?.preventDefault();
+    if (!ticketSearch.trim()) return;
+    setSearching(true);
+    const { data, error } = await findRepairOrder(branch.id, ticketSearch);
+    setSearching(false);
+    if (error) return flash("error", error.message);
+    setViewOrder(data);
+    flash("success", `Ticket ${data.ticket_number} encontrado.`);
+  }
+
   function addPart() {
     if (!partToAdd.product_id) return;
-    const product = partsCatalog.find((p) => p.id === partToAdd.product_id);
+    const product = compatibleParts.find((p) => p.id === partToAdd.product_id);
     if (!product) return;
 
     const qty = Math.max(1, Number(partToAdd.quantity) || 1);
@@ -131,6 +175,7 @@ export default function ServicioTecnicoPage() {
       tenantId: profile.tenant_id,
       branchId: branch.id,
       userId: profile.user_id,
+      ticketNumber: form.ticket_number,
       clientName: form.client_name,
       clientPhone: form.client_phone,
       deviceBrand: form.device_brand,
@@ -154,18 +199,63 @@ export default function ServicioTecnicoPage() {
       return;
     }
 
-    flash("success", "Orden de reparación registrada.");
+    flash("success", `Orden registrada — Ticket ${data.ticket_number}`);
     setShowForm(false);
     setForm(emptyForm);
     setSelectedParts([]);
+    setViewOrder(data);
     setTicketOrder(data);
     loadAll();
   }
 
-  async function handleStatusChange(orderId, status) {
-    const { error } = await updateRepairOrderStatus(orderId, status);
+  async function handleStatusChange(order, newStatus) {
+    if (newStatus === "entregado") {
+      if (order.status === "entregado" && order.sale_id) {
+        const { data, error } = await getRepairReceipt(order.id);
+        if (error) flash("error", error.message);
+        else setReceiptData(data);
+        return;
+      }
+      setDeliverModal(order);
+      setPaymentMethod("efectivo");
+      return;
+    }
+
+    const { error } = await updateRepairOrderStatus(order.id, newStatus, profile.user_id);
     if (error) flash("error", error.message);
-    else loadAll();
+    else {
+      loadAll();
+      if (viewOrder?.id === order.id) {
+        setViewOrder({ ...viewOrder, status: newStatus });
+      }
+    }
+  }
+
+  async function confirmDelivery() {
+    if (!deliverModal) return;
+    setDelivering(true);
+    const { data, error } = await deliverRepairOrder({
+      orderId: deliverModal.id,
+      userId: profile.user_id,
+      paymentMethod,
+    });
+    setDelivering(false);
+
+    if (error) {
+      flash("error", error.message);
+      return;
+    }
+
+    setDeliverModal(null);
+    setViewOrder(data.order);
+    setReceiptData(data);
+    flash("success", "Equipo entregado. Recibo generado e inventario actualizado.");
+    loadAll();
+  }
+
+  function selectOrder(order) {
+    setViewOrder(order);
+    setTicketSearch(order.ticket_number);
   }
 
   return (
@@ -174,7 +264,7 @@ export default function ServicioTecnicoPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Servicio Técnico</h1>
           <p className="text-sm text-slate-500">
-            Recepción de equipos para reparación — {branch?.name}
+            Recepción y entrega de equipos — {branch?.name}
           </p>
         </div>
         <button
@@ -201,6 +291,135 @@ export default function ServicioTecnicoPage() {
         </div>
       )}
 
+      {/* Buscar ticket */}
+      <section className="mb-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <h2 className="mb-3 font-semibold text-slate-900">Buscar ticket</h2>
+        <form onSubmit={handleSearchTicket} className="flex flex-wrap gap-3">
+          <input
+            placeholder="Número de ticket o contraseña de retiro"
+            value={ticketSearch}
+            onChange={(e) => setTicketSearch(e.target.value)}
+            className="min-w-[240px] flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-mono"
+          />
+          <button
+            type="submit"
+            disabled={searching}
+            className="rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {searching ? "Buscando..." : "Buscar"}
+          </button>
+        </form>
+      </section>
+
+      {/* Detalle del ticket seleccionado */}
+      {viewOrder && (
+        <section className="mb-6 overflow-hidden rounded-xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-white shadow-sm">
+          <div className="border-b border-indigo-100 bg-indigo-600 px-6 py-4 text-white">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-200">
+                  Ticket de servicio
+                </p>
+                <p className="font-mono text-3xl font-bold">{viewOrder.ticket_number}</p>
+                <p className="mt-1 text-sm text-indigo-100">
+                  Contraseña:{" "}
+                  <span className="font-mono text-lg font-bold tracking-widest">
+                    {viewOrder.ticket_password}
+                  </span>
+                </p>
+              </div>
+              <div className="text-right">
+                <span
+                  className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
+                    REPAIR_STATUSES[viewOrder.status]?.color || "bg-white/20"
+                  }`}
+                >
+                  {REPAIR_STATUSES[viewOrder.status]?.label || viewOrder.status}
+                </span>
+                <p className="mt-2 text-2xl font-bold">{formatMoney(viewOrder.total_cost)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-400">Cliente</p>
+              <p className="font-medium">{viewOrder.client_name}</p>
+              <p className="text-sm text-slate-500">{viewOrder.client_phone}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-400">Equipo</p>
+              <p className="font-medium">
+                {viewOrder.device_brand} {viewOrder.device_model}
+              </p>
+              <p className="text-sm text-slate-500">{viewOrder.device_condition}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-400">Reparación</p>
+              <p className="font-medium">{viewOrder.repair_service_name}</p>
+              <p className="text-sm text-slate-500">Téc: {viewOrder.technician_name}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-400">Entrega estimada</p>
+              <p className="font-medium">
+                {formatRepairDateTime(viewOrder.estimated_completion)}
+              </p>
+            </div>
+          </div>
+
+          {viewOrder.parts?.length > 0 && (
+            <div className="border-t border-indigo-100 px-6 py-4">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-400">Repuestos</p>
+              <div className="flex flex-wrap gap-2">
+                {viewOrder.parts.map((part) => (
+                  <span
+                    key={part.product_id}
+                    className="rounded-lg bg-white px-3 py-1 text-sm ring-1 ring-slate-200"
+                  >
+                    {part.product_name} x{part.quantity}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3 border-t border-indigo-100 bg-slate-50 px-6 py-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-slate-600">Estado:</span>
+              <select
+                value={viewOrder.status}
+                onChange={(e) => handleStatusChange(viewOrder, e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                {Object.entries(REPAIR_STATUSES).map(([key, val]) => (
+                  <option key={key} value={key}>
+                    {val.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={() => setTicketOrder(viewOrder)}
+              className="rounded-lg border border-indigo-300 bg-white px-4 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50"
+            >
+              Imprimir ticket térmico
+            </button>
+            {viewOrder.sale_id && (
+              <button
+                onClick={async () => {
+                  const { data, error } = await getRepairReceipt(viewOrder.id);
+                  if (error) flash("error", error.message);
+                  else setReceiptData(data);
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm text-white hover:bg-emerald-700"
+              >
+                Ver recibo de entrega
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {showForm && (
         <form
           onSubmit={handleSubmit}
@@ -209,6 +428,18 @@ export default function ServicioTecnicoPage() {
           <h2 className="mb-4 text-lg font-semibold text-slate-900">
             Registrar equipo en reparación
           </h2>
+
+          <div className="mb-4">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Número de ticket (opcional — se genera automático si se deja vacío)
+            </label>
+            <input
+              placeholder="Ej: ST-02-0042"
+              value={form.ticket_number}
+              onChange={(e) => setForm({ ...form, ticket_number: e.target.value.toUpperCase() })}
+              className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm"
+            />
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <section>
@@ -235,25 +466,38 @@ export default function ServicioTecnicoPage() {
 
             <section>
               <h3 className="mb-3 text-sm font-semibold uppercase text-slate-500">
-                Equipo
+                Equipo — Marca y modelo
               </h3>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    placeholder="Marca *"
-                    value={form.device_brand}
-                    onChange={(e) => setForm({ ...form, device_brand: e.target.value })}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    required
-                  />
-                  <input
-                    placeholder="Modelo *"
-                    value={form.device_model}
-                    onChange={(e) => setForm({ ...form, device_model: e.target.value })}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    required
-                  />
-                </div>
+                <select
+                  value={form.device_brand}
+                  onChange={(e) =>
+                    setForm({ ...form, device_brand: e.target.value, device_model: "" })
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  required
+                >
+                  <option value="">Seleccionar marca *</option>
+                  {brands.map((brand) => (
+                    <option key={brand} value={brand}>
+                      {brand}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={form.device_model}
+                  onChange={(e) => setForm({ ...form, device_model: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  required
+                  disabled={!form.device_brand}
+                >
+                  <option value="">Seleccionar modelo *</option>
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
                 <select
                   value={form.device_condition}
                   onChange={(e) =>
@@ -283,7 +527,7 @@ export default function ServicioTecnicoPage() {
 
             <section>
               <h3 className="mb-3 text-sm font-semibold uppercase text-slate-500">
-                Reparación
+                Reparación y repuestos
               </h3>
               <div className="space-y-3">
                 <select
@@ -304,63 +548,75 @@ export default function ServicioTecnicoPage() {
 
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <p className="mb-2 text-xs font-semibold text-slate-600">
-                    Repuestos del inventario (opcional)
+                    Repuestos para {form.device_brand} {form.device_model || "—"}
                   </p>
-                  <div className="flex gap-2">
-                    <select
-                      value={partToAdd.product_id}
-                      onChange={(e) =>
-                        setPartToAdd({ ...partToAdd, product_id: e.target.value })
-                      }
-                      className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                    >
-                      <option value="">Seleccionar repuesto</option>
-                      {partsCatalog.map((part) => (
-                        <option key={part.id} value={part.id}>
-                          {part.name} (stock: {part.stock}) — {formatMoney(part.price)}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min="1"
-                      value={partToAdd.quantity}
-                      onChange={(e) =>
-                        setPartToAdd({ ...partToAdd, quantity: e.target.value })
-                      }
-                      className="w-16 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={addPart}
-                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white"
-                    >
-                      +
-                    </button>
-                  </div>
-                  {selectedParts.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {selectedParts.map((part) => (
-                        <li
-                          key={part.product_id}
-                          className="flex items-center justify-between text-sm"
+                  {!form.device_brand || !form.device_model ? (
+                    <p className="text-xs text-slate-400">
+                      Seleccione marca y modelo para ver repuestos compatibles.
+                    </p>
+                  ) : compatibleParts.length === 0 ? (
+                    <p className="text-xs text-amber-600">
+                      No hay repuestos en inventario para este modelo.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <select
+                          value={partToAdd.product_id}
+                          onChange={(e) =>
+                            setPartToAdd({ ...partToAdd, product_id: e.target.value })
+                          }
+                          className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                         >
-                          <span>
-                            {part.product_name} x{part.quantity}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span>{formatMoney(part.price * part.quantity)}</span>
-                            <button
-                              type="button"
-                              onClick={() => removePart(part.product_id)}
-                              className="text-red-500"
+                          <option value="">Seleccionar repuesto</option>
+                          {compatibleParts.map((part) => (
+                            <option key={part.id} value={part.id}>
+                              {part.name} (stock: {part.stock}) — {formatMoney(part.price)}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="1"
+                          value={partToAdd.quantity}
+                          onChange={(e) =>
+                            setPartToAdd({ ...partToAdd, quantity: e.target.value })
+                          }
+                          className="w-16 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={addPart}
+                          className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white"
+                        >
+                          +
+                        </button>
+                      </div>
+                      {selectedParts.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {selectedParts.map((part) => (
+                            <li
+                              key={part.product_id}
+                              className="flex items-center justify-between text-sm"
                             >
-                              ✕
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                              <span>
+                                {part.product_name} x{part.quantity}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span>{formatMoney(part.price * part.quantity)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removePart(part.product_id)}
+                                  className="text-red-500"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -414,16 +670,7 @@ export default function ServicioTecnicoPage() {
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4">
             <div>
               <p className="text-sm text-slate-500">Costo total estimado</p>
-              <p className="text-2xl font-bold text-indigo-600">
-                {formatMoney(totalCost)}
-              </p>
-              {selectedService && (
-                <p className="text-xs text-slate-400">
-                  Mano de obra: {formatMoney(laborCost)}
-                  {selectedParts.length > 0 &&
-                    ` + repuestos: ${formatMoney(totalCost - laborCost)}`}
-                </p>
-              )}
+              <p className="text-2xl font-bold text-indigo-600">{formatMoney(totalCost)}</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -466,9 +713,6 @@ export default function ServicioTecnicoPage() {
                   <th className="px-6 py-3 font-medium">Ticket</th>
                   <th className="px-6 py-3 font-medium">Cliente</th>
                   <th className="px-6 py-3 font-medium">Equipo</th>
-                  <th className="px-6 py-3 font-medium">Reparación</th>
-                  <th className="px-6 py-3 font-medium">Técnico</th>
-                  <th className="px-6 py-3 font-medium">Entrega</th>
                   <th className="px-6 py-3 font-medium">Total</th>
                   <th className="px-6 py-3 font-medium">Estado</th>
                   <th className="px-6 py-3 font-medium">Acciones</th>
@@ -477,13 +721,20 @@ export default function ServicioTecnicoPage() {
               <tbody>
                 {orders.map((order) => {
                   const statusInfo = REPAIR_STATUSES[order.status] || REPAIR_STATUSES.recibido;
+                  const isSelected = viewOrder?.id === order.id;
                   return (
-                    <tr key={order.id} className="border-b border-slate-100">
+                    <tr
+                      key={order.id}
+                      className={`border-b border-slate-100 ${isSelected ? "bg-indigo-50" : ""}`}
+                    >
                       <td className="px-6 py-3">
-                        <p className="font-mono font-medium">{order.ticket_number}</p>
-                        <p className="text-xs text-slate-400">
-                          Clave: {order.ticket_password}
-                        </p>
+                        <button
+                          onClick={() => selectOrder(order)}
+                          className="text-left font-mono font-medium text-indigo-600 hover:underline"
+                        >
+                          {order.ticket_number}
+                        </button>
+                        <p className="text-xs text-slate-400">Clave: {order.ticket_password}</p>
                       </td>
                       <td className="px-6 py-3">
                         <p className="font-medium">{order.client_name}</p>
@@ -491,36 +742,30 @@ export default function ServicioTecnicoPage() {
                       </td>
                       <td className="px-6 py-3">
                         {order.device_brand} {order.device_model}
-                        <p className="text-xs text-slate-500">{order.device_condition}</p>
                       </td>
-                      <td className="px-6 py-3">{order.repair_service_name}</td>
-                      <td className="px-6 py-3">{order.technician_name}</td>
-                      <td className="px-6 py-3 text-xs">
-                        {formatRepairDateTime(order.estimated_completion)}
-                      </td>
-                      <td className="px-6 py-3 font-medium">
-                        {formatMoney(order.total_cost)}
-                      </td>
+                      <td className="px-6 py-3 font-medium">{formatMoney(order.total_cost)}</td>
                       <td className="px-6 py-3">
-                        <select
-                          value={order.status}
-                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        <span
                           className={`rounded-full px-2 py-1 text-xs font-medium ${statusInfo.color}`}
                         >
-                          {Object.entries(REPAIR_STATUSES).map(([key, val]) => (
-                            <option key={key} value={key}>
-                              {val.label}
-                            </option>
-                          ))}
-                        </select>
+                          {statusInfo.label}
+                        </span>
                       </td>
                       <td className="px-6 py-3">
-                        <button
-                          onClick={() => setTicketOrder(order)}
-                          className="text-indigo-600 hover:underline"
-                        >
-                          Reimprimir
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => selectOrder(order)}
+                            className="text-indigo-600 hover:underline"
+                          >
+                            Ver
+                          </button>
+                          <button
+                            onClick={() => setTicketOrder(order)}
+                            className="text-slate-600 hover:underline"
+                          >
+                            Ticket
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -537,6 +782,62 @@ export default function ServicioTecnicoPage() {
           tenant={tenant}
           branch={branch}
           onClose={() => setTicketOrder(null)}
+        />
+      )}
+
+      {deliverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-900">Entregar equipo</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Ticket <span className="font-mono font-semibold">{deliverModal.ticket_number}</span>{" "}
+              — se generará recibo y se descontarán los repuestos del inventario.
+            </p>
+            <p className="mt-3 text-xl font-bold text-indigo-600">
+              Total: {formatMoney(deliverModal.total_cost)}
+            </p>
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Método de pago
+              </label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+              </select>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={confirmDelivery}
+                disabled={delivering}
+                className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {delivering ? "Procesando..." : "Confirmar entrega y generar recibo"}
+              </button>
+              <button
+                onClick={() => setDeliverModal(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {receiptData?.sale && (
+        <ReceiptModal
+          sale={receiptData.sale}
+          items={receiptData.items}
+          tenant={tenant}
+          branch={branch}
+          paymentMethod={receiptData.sale.payment_method}
+          title="Recibo de entrega — Servicio Técnico"
+          onClose={() => setReceiptData(null)}
         />
       )}
     </div>

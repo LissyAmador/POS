@@ -83,6 +83,14 @@ function migrateStore(data) {
   migrated = mergeChinoCellIfMissing(migrated, initial);
   migrated = migrateRepairModule(migrated, initial);
 
+  migrated.repair_orders = (migrated.repair_orders || []).map((order) => ({
+    ...order,
+    parts_deducted:
+      order.parts_deducted ??
+      (order.parts?.length > 0 && order.status !== "entregado"),
+    sale_id: order.sale_id ?? null,
+  }));
+
   return migrated;
 }
 

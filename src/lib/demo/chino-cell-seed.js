@@ -316,10 +316,27 @@ export function createChinoCellBundle(now = new Date()) {
     },
   ];
 
+  const deviceMeta = {
+    "cc-prod-001": { device_brand: "Samsung", device_model: "Galaxy A54 128GB", device_platform: "Android" },
+    "cc-prod-002": { device_brand: "Xiaomi", device_model: "Redmi Note 13 Pro", device_platform: "Android" },
+    "cc-prod-003": { device_brand: "Motorola", device_model: "Edge 40 Neo", device_platform: "Android" },
+    "cc-prod-004": { device_brand: "Apple", device_model: "iPhone 13 128GB", device_platform: "iOS" },
+    "cc-prod-005": { device_brand: "Apple", device_model: "iPhone 14 Pro 256GB", device_platform: "iOS" },
+    "cc-prod-006": { device_brand: "Apple", device_model: "iPhone SE 2022 64GB", device_platform: "iOS" },
+    "cc-prod-007": { device_brand: "Samsung", device_model: "Galaxy A54 128GB" },
+    "cc-prod-008": { device_brand: "Xiaomi", device_model: "Redmi Note 13 Pro" },
+    "cc-prod-009": { device_universal: true },
+    "cc-prod-010": { device_brand: "Apple", device_model: "iPhone 13 128GB" },
+    "cc-prod-011": { device_brand: "Apple", device_model: "iPhone 13 128GB" },
+    "cc-prod-012": { device_brand: "Apple", device_model: "iPhone 14 Pro 256GB" },
+  };
+
+  const productsWithMeta = products.map((p) => ({ ...p, ...(deviceMeta[p.id] || {}) }));
+
   const stockBranch1 = [8, 6, 4, 5, 3, 7, 15, 22, 30, 10, 18, 12, 999, 999, 999, 999, 45, 60, 25, 8];
   const stockBranch2 = [5, 8, 3, 4, 2, 5, 10, 18, 25, 8, 14, 9, 999, 999, 999, 999, 38, 55, 20, 6];
 
-  const inventory = products.flatMap((product, index) => [
+  const inventory = productsWithMeta.flatMap((product, index) => [
     {
       id: `cc-inv-1-${product.id}`,
       branch_id: CHINO_BRANCH_1_ID,
@@ -488,7 +505,7 @@ export function createChinoCellBundle(now = new Date()) {
     users_profiles,
     categories,
     presentations,
-    products,
+    products: productsWithMeta,
     inventory,
     sales: [],
     sales_details: [],

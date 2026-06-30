@@ -1,10 +1,17 @@
 import { isDemoMode } from "./demo-mode";
 import { getDemoStore, updateDemoStore, uuid } from "./demo/store";
+import { getSaleWithDetails } from "./pos-api";
 import {
   calculateRepairTotal,
   generateTicketPassword,
   getRepairTicketNumber,
 } from "./repair-utils";
+import {
+  filterPartsForDevice,
+  getMergedBrandCatalog,
+  getBrandListFromCatalog,
+  getModelsFromCatalog,
+} from "./device-catalog";
 
 const SERVICE_CATEGORY_NAMES = new Set([
   "Servicios de Reparación",
@@ -16,6 +23,13 @@ const PARTS_CATEGORY_NAMES = new Set([
   "Repuestos iOS",
   "repuestos android",
   "repuestos ios",
+]);
+
+const PHONE_CATEGORY_NAMES = new Set([
+  "Teléfonos Android",
+  "Teléfonos iOS",
+  "teléfonos android",
+  "teléfonos ios",
 ]);
 
 function enrichProduct(store, product, branchId) {
@@ -52,13 +66,32 @@ export async function getRepairCatalog(tenantId, branchId) {
     const services = products.filter((p) =>
       SERVICE_CATEGORY_NAMES.has(p.category_name)
     );
-    const parts = products.filter(
-      (p) => PARTS_CATEGORY_NAMES.has(p.category_name) && p.stock > 0
+    const parts = products.filter((p) =>
+      PARTS_CATEGORY_NAMES.has(p.category_name)
     );
+    const phones = products.filter((p) => PHONE_CATEGORY_NAMES.has(p.category_name));
+    const brandCatalog = getMergedBrandCatalog(phones);
 
-    return { data: { services, parts }, error: null };
+    return {
+      data: {
+        services,
+        parts,
+        phones,
+        brandCatalog,
+        brands: getBrandListFromCatalog(brandCatalog),
+      },
+      error: null,
+    };
   }
-  return { data: { services: [], parts: [] }, error: null };
+  return { data: { services: [], parts: [], phones: [], brandCatalog: {}, brands: [] }, error: null };
+}
+
+export function getPartsForBrandModel(parts, brand, model) {
+  return filterPartsForDevice(parts, brand, model).filter((p) => p.stock > 0);
+}
+
+export function getModelsForBrand(catalog, brand) {
+  return getModelsFromCatalog(catalog, brand);
 }
 
 export async function getRepairOrders(branchId) {
@@ -67,19 +100,49 @@ export async function getRepairOrders(branchId) {
     const orders = (store.repair_orders || [])
       .filter((o) => o.branch_id === branchId)
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .map((order) => ({
-        ...order,
-        ticket_number: order.ticket_number || getRepairTicketNumber(order.id, branchId),
-      }));
+      .map((order) => enrichOrder(order, branchId));
     return { data: orders, error: null };
   }
   return { data: [], error: null };
+}
+
+function enrichOrder(order, branchId) {
+  return {
+    ...order,
+    ticket_number: order.ticket_number || getRepairTicketNumber(order.id, branchId),
+    parts_deducted: order.parts_deducted ?? false,
+  };
+}
+
+export async function findRepairOrder(branchId, query) {
+  if (!query?.trim()) {
+    return { data: null, error: { message: "Ingrese número de ticket o contraseña." } };
+  }
+
+  if (isDemoMode()) {
+    const store = getDemoStore();
+    const q = query.trim().toUpperCase();
+    const order = (store.repair_orders || []).find((o) => {
+      if (o.branch_id !== branchId) return false;
+      const ticket = (o.ticket_number || getRepairTicketNumber(o.id, branchId)).toUpperCase();
+      return ticket === q || ticket.includes(q) || o.ticket_password === query.trim();
+    });
+
+    if (!order) {
+      return { data: null, error: { message: "Ticket no encontrado en esta sucursal." } };
+    }
+
+    return { data: enrichOrder(order, branchId), error: null };
+  }
+
+  return { data: null, error: null };
 }
 
 export async function createRepairOrder({
   tenantId,
   branchId,
   userId,
+  ticketNumber,
   clientName,
   clientPhone,
   deviceBrand,
@@ -119,6 +182,19 @@ export async function createRepairOrder({
 
   if (isDemoMode()) {
     const store = getDemoStore();
+    const orderId = uuid();
+    const finalTicketNumber =
+      ticketNumber?.trim() ||
+      getRepairTicketNumber(orderId, branchId);
+
+    const duplicate = (store.repair_orders || []).some(
+      (o) =>
+        o.branch_id === branchId &&
+        (o.ticket_number || "").toUpperCase() === finalTicketNumber.toUpperCase()
+    );
+    if (duplicate) {
+      return { error: { message: "El número de ticket ya existe en esta sucursal." } };
+    }
 
     for (const part of parts || []) {
       const inv = store.inventory.find(
@@ -133,7 +209,6 @@ export async function createRepairOrder({
       }
     }
 
-    const orderId = uuid();
     const ticketPassword = generateTicketPassword();
     const totalCost = calculateRepairTotal(laborCost, parts);
 
@@ -142,7 +217,7 @@ export async function createRepairOrder({
       tenant_id: tenantId,
       branch_id: branchId,
       user_id: userId,
-      ticket_number: getRepairTicketNumber(orderId, branchId),
+      ticket_number: finalTicketNumber,
       ticket_password: ticketPassword,
       client_name: clientName.trim(),
       client_phone: clientPhone.trim(),
@@ -160,25 +235,15 @@ export async function createRepairOrder({
       notes: notes?.trim() || "",
       total_cost: totalCost,
       status: "recibido",
+      parts_deducted: false,
+      sale_id: null,
       created_at: new Date().toISOString(),
     };
 
-    updateDemoStore((data) => {
-      let inventory = [...data.inventory];
-      for (const part of parts || []) {
-        inventory = inventory.map((item) =>
-          item.branch_id === branchId && item.product_id === part.product_id
-            ? { ...item, stock: item.stock - part.quantity }
-            : item
-        );
-      }
-
-      return {
-        ...data,
-        repair_orders: [...(data.repair_orders || []), order],
-        inventory,
-      };
-    });
+    updateDemoStore((data) => ({
+      ...data,
+      repair_orders: [...(data.repair_orders || []), order],
+    }));
 
     return { data: order, error: null };
   }
@@ -186,12 +251,168 @@ export async function createRepairOrder({
   return { error: { message: "Conecte Supabase para producción." } };
 }
 
-export async function updateRepairOrderStatus(orderId, status) {
+function buildSaleItemsFromOrder(order) {
+  const items = [
+    {
+      product_id: order.repair_service_id,
+      quantity: 1,
+      price: order.labor_cost,
+    },
+  ];
+
+  for (const part of order.parts || []) {
+    items.push({
+      product_id: part.product_id,
+      quantity: part.quantity,
+      price: part.price,
+    });
+  }
+
+  return items;
+}
+
+export async function deliverRepairOrder({
+  orderId,
+  userId,
+  paymentMethod = "efectivo",
+}) {
+  if (isDemoMode()) {
+    const store = getDemoStore();
+    const order = (store.repair_orders || []).find((o) => o.id === orderId);
+
+    if (!order) return { error: { message: "Orden no encontrada." } };
+    if (order.status === "entregado") {
+      return { error: { message: "Esta orden ya fue entregada." } };
+    }
+    if (order.sale_id) {
+      const receipt = await getSaleWithDetails(order.sale_id);
+      return { data: { order, sale: receipt.sale, items: receipt.details }, error: null };
+    }
+
+    const openRegister = store.cash_registers.find(
+      (r) => r.branch_id === order.branch_id && r.status === "abierta"
+    );
+    if (!openRegister) {
+      return {
+        error: {
+          message: "No hay caja abierta. Abra la caja antes de entregar y cobrar.",
+        },
+      };
+    }
+
+    const items = buildSaleItemsFromOrder(order);
+    const itemsToDeduct = order.parts_deducted
+      ? items.filter((i) => i.product_id === order.repair_service_id)
+      : items;
+
+    for (const item of itemsToDeduct) {
+      const inv = store.inventory.find(
+        (i) => i.branch_id === order.branch_id && i.product_id === item.product_id
+      );
+      if (!inv || inv.stock < item.quantity) {
+        return { error: { message: "Stock insuficiente para completar la entrega." } };
+      }
+    }
+
+    const total = items.reduce(
+      (sum, item) => sum + Number(item.price) * item.quantity,
+      0
+    );
+
+    const saleId = uuid();
+    const sale = {
+      id: saleId,
+      branch_id: order.branch_id,
+      user_id: userId,
+      client_name: order.client_name,
+      type: "contado",
+      payment_method: paymentMethod,
+      total,
+      status: "activa",
+      status_credit: "pagado",
+      due_date: null,
+      repair_order_id: orderId,
+      created_at: new Date().toISOString(),
+    };
+
+    const details = items.map((item) => ({
+      id: uuid(),
+      sale_id: saleId,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    updateDemoStore((data) => {
+      const inventory = data.inventory.map((i) => {
+        const item = itemsToDeduct.find(
+          (it) => it.product_id === i.product_id && i.branch_id === order.branch_id
+        );
+        if (!item) return i;
+        return { ...i, stock: i.stock - item.quantity };
+      });
+
+      const cash_registers = data.cash_registers.map((r) =>
+        r.branch_id === order.branch_id && r.status === "abierta"
+          ? { ...r, current_balance: Number(r.current_balance) + total }
+          : r
+      );
+
+      const repair_orders = (data.repair_orders || []).map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "entregado",
+              parts_deducted: true,
+              sale_id: saleId,
+              delivered_at: new Date().toISOString(),
+              payment_method: paymentMethod,
+            }
+          : o
+      );
+
+      return {
+        ...data,
+        inventory,
+        cash_registers,
+        sales: [...data.sales, sale],
+        sales_details: [...data.sales_details, ...details],
+        repair_orders,
+      };
+    });
+
+    const receipt = await getSaleWithDetails(saleId);
+    const updatedOrder = getDemoStore().repair_orders.find((o) => o.id === orderId);
+
+    return {
+      data: {
+        order: enrichOrder(updatedOrder, order.branch_id),
+        sale: receipt.sale,
+        items: receipt.details,
+      },
+      error: null,
+    };
+  }
+
+  return { error: { message: "Conecte Supabase para producción." } };
+}
+
+export async function updateRepairOrderStatus(orderId, status, userId) {
+  if (status === "entregado") {
+    return {
+      error: {
+        message: "Use el flujo de entrega para generar recibo y descontar inventario.",
+      },
+    };
+  }
+
   if (isDemoMode()) {
     updateDemoStore((data) => ({
       ...data,
       repair_orders: (data.repair_orders || []).map((order) =>
-        order.id === orderId ? { ...order, status } : order
+        order.id === orderId
+          ? { ...order, status, updated_at: new Date().toISOString() }
+          : order
       ),
     }));
     return { error: null };
@@ -205,10 +426,23 @@ export async function getRepairOrderById(orderId) {
     const order = (store.repair_orders || []).find((o) => o.id === orderId);
     if (!order) return { data: null, error: { message: "Orden no encontrada." } };
     return {
-      data: {
-        ...order,
-        ticket_number: order.ticket_number || getRepairTicketNumber(order.id, order.branch_id),
-      },
+      data: enrichOrder(order, order.branch_id),
+      error: null,
+    };
+  }
+  return { data: null, error: null };
+}
+
+export async function getRepairReceipt(orderId) {
+  if (isDemoMode()) {
+    const store = getDemoStore();
+    const order = (store.repair_orders || []).find((o) => o.id === orderId);
+    if (!order?.sale_id) {
+      return { data: null, error: { message: "Esta orden aún no tiene recibo." } };
+    }
+    const receipt = await getSaleWithDetails(order.sale_id);
+    return {
+      data: { order, sale: receipt.sale, items: receipt.details },
       error: null,
     };
   }
